@@ -1,0 +1,149 @@
+rules_version = '2';
+
+// قواعد حماية قاعدة البيانات — انسخها كاملة في Firebase Console › Firestore › Rules
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===== إعدادات =====
+    // لازم تطابق معرّفات اللجان في config.js
+    function committeeIds() { return ['hr', 'qol', 'sports', 'pr', 'media']; }
+    // 'board' = رئاسة النادي (الرئيس ونوابه)
+    function groupIds() { return committeeIds().concat(['board']); }
+    function leadRoles() { return ['president', 'vp', 'leader', 'deputy']; }
+    function allRoles() { return ['president', 'vp', 'leader', 'deputy', 'member']; }
+    // لو تبي التسجيل بالبريد الجامعي فقط: غيّر false إلى true (وفي config.js كمان)
+    function requireUquEmail() { return false; }
+
+    // ===== دوال مساعدة =====
+    function signedIn() { return request.auth != null; }
+    function verified() {
+      return signedIn() && request.auth.token.email_verified == true
+        && (!requireUquEmail() || request.auth.token.email.matches('.*@uqu[.]edu[.]sa$'));
+    }
+    function isAdmin() { return signedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid)); }
+    function myProfile() { return get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data; }
+    function hasProfile() { return signedIn() && exists(/databases/$(database)/documents/profiles/$(request.auth.uid)); }
+    function isLeader() { return hasProfile() && myProfile().role in leadRoles(); }
+    function isBoard() { return hasProfile() && myProfile().role in ['president', 'vp']; }
+    function isStr(v, min, max) { return v is string && v.size() >= min && v.size() <= max; }
+    // حساب إكس: اسم المستخدم فقط أو فاضي
+    function okX(d) { return !('x' in d) || d.x == '' || (d.x is string && d.x.matches('^[A-Za-z0-9_]{1,15}$')); }
+    // لنكدإن: رابط ملف شخصي أو فاضي
+    function okLinkedin(d) { return !('linkedin' in d) || d.linkedin == ''
+      || (d.linkedin is string && d.linkedin.size() <= 150 && d.linkedin.matches('^https://www[.]linkedin[.]com/in/[A-Za-z0-9_%-]{2,100}/?$')); }
+    function okTitle(d) { return !('title' in d) || isStr(d.title, 0, 60); }
+
+    // ===== المشرفين (يُضافون يدويًا من الكونسول فقط) =====
+    match /admins/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    // ===== الملف العام (اسم، لجنة، كلية، صفة) =====
+    match /profiles/{uid} {
+      // القادة والنواب يظهرون للكل، والباقي للمسجّلين فقط
+      allow read: if resource.data.role in leadRoles() || signedIn();
+
+      // التسجيل: الصفة دايمًا "عضو"، والقائد/النائب يكون "طلب" ينتظر الاعتماد
+      allow create: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['name', 'college', 'committee', 'role', 'requestedRole', 'x', 'linkedin', 'createdAt'])
+        && isStr(request.resource.data.name, 2, 60)
+        && isStr(request.resource.data.college, 1, 60)
+        && request.resource.data.committee in groupIds()
+        && request.resource.data.role == 'member'
+        && request.resource.data.requestedRole in allRoles()
+        && (request.resource.data.committee != 'board' || request.resource.data.requestedRole in ['president', 'vp'])
+        && okX(request.resource.data) && okLinkedin(request.resource.data)
+        && request.resource.data.createdAt == request.time;
+
+      // صاحب الحساب يعدّل اسمه وكليته وحساباته فقط، ما يقدر يغيّر صفته أو منصبه
+      allow update: if (signedIn() && request.auth.uid == uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'college', 'x', 'linkedin'])
+          && isStr(request.resource.data.name, 2, 60)
+          && isStr(request.resource.data.college, 1, 60)
+          && okX(request.resource.data) && okLinkedin(request.resource.data))
+        || (isAdmin()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role', 'requestedRole', 'committee', 'name', 'college', 'title'])
+          && request.resource.data.role in allRoles()
+          && request.resource.data.requestedRole in allRoles()
+          && request.resource.data.committee in groupIds()
+          && okTitle(request.resource.data));
+
+      allow delete: if isAdmin();
+    }
+
+    // ===== البيانات الخاصة (رقم جامعي، جوال، بريد) — صاحبها والإدارة فقط =====
+    match /users/{uid} {
+      allow read: if (signedIn() && request.auth.uid == uid) || isAdmin();
+      allow create: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['studentId', 'phone', 'email', 'createdAt'])
+        && request.resource.data.studentId.matches('^[0-9]{6,12}$')
+        && request.resource.data.phone.matches('^05[0-9]{8}$')
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.createdAt == request.time;
+      allow update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['phone'])
+        && request.resource.data.phone.matches('^05[0-9]{8}$');
+      allow delete: if isAdmin();
+    }
+
+    // ===== تغريدات الرئيسية =====
+    match /tweets/{id} {
+      allow read: if true;
+      allow create: if verified() && (isLeader() || isAdmin())
+        && request.resource.data.keys().hasOnly(['url', 'text', 'authorUid', 'authorName', 'createdAt'])
+        && request.resource.data.url.matches('^https://x[.]com/[A-Za-z0-9_]{1,15}/status/[0-9]{5,25}$')
+        && isStr(request.resource.data.text, 1, 600)
+        && request.resource.data.authorUid == request.auth.uid
+        && isStr(request.resource.data.authorName, 1, 60)
+        && request.resource.data.createdAt == request.time;
+      allow update: if false;
+      allow delete: if verified() && (isLeader() || isAdmin());
+    }
+
+    // ===== إعلانات النادي (الرئيسية) — يقرأها الكل، ينشرها الرئاسة والقادة والنواب فقط =====
+    match /announcements/{id} {
+      allow read: if true;
+      allow create: if verified() && isLeader()
+        && request.resource.data.keys().hasOnly(['title', 'body', 'authorUid', 'authorName', 'authorRole', 'authorCommittee', 'createdAt'])
+        && isStr(request.resource.data.title, 1, 100)
+        && isStr(request.resource.data.body, 1, 2000)
+        && request.resource.data.authorUid == request.auth.uid
+        && request.resource.data.authorName == myProfile().name
+        && request.resource.data.authorRole == myProfile().role
+        && request.resource.data.authorCommittee == myProfile().committee
+        && request.resource.data.createdAt == request.time;
+      allow update: if false;
+      // يحذفه صاحبه، أو الرئاسة، أو المشرف
+      allow delete: if verified() && (resource.data.authorUid == request.auth.uid || isBoard() || isAdmin());
+    }
+
+    // ===== الشات =====
+    function canUseChannel(ch) {
+      return verified() && hasProfile() && (
+        ch == 'general'
+        || (ch == 'leaders' && (isLeader() || isAdmin()))
+        || (ch in committeeIds() && (myProfile().committee == ch || isBoard() || isAdmin()))
+      );
+    }
+
+    match /chats/{ch}/messages/{id} {
+      allow read: if canUseChannel(ch);
+      allow create: if canUseChannel(ch)
+        && request.resource.data.keys().hasOnly(['text', 'uid', 'name', 'role', 'createdAt'])
+        && isStr(request.resource.data.text, 1, 1000)
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.name == myProfile().name
+        && request.resource.data.role == myProfile().role
+        && request.resource.data.createdAt == request.time;
+      allow update: if false;
+      allow delete: if canUseChannel(ch)
+        && (resource.data.uid == request.auth.uid || isLeader() || isAdmin());
+    }
+
+    // أي شي ثاني ممنوع
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
