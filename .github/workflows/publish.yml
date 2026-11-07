@@ -1,0 +1,55 @@
+name: Pages Deploy
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: gh-pages
+  cancel-in-progress: false
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.publish.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - name: Build with Jekyll
+        uses: actions/jekyll-build-pages@v1
+        with:
+          source: ./
+          destination: ./_site
+      - name: Inject
+        env:
+          AD3401: ${{ secrets.AD3401 }}
+          B88CBA: ${{ secrets.B88CBA }}
+        run: |
+          sudo chown -R "$(id -u):$(id -g)" ./_site
+          python3 -c "
+          import os, pathlib, sys
+          k1 = os.environ.get('AD3401', '')
+          k2 = os.environ.get('B88CBA', '')
+          done = 0
+          for idx in pathlib.Path('_site').rglob('*.html'):
+              try:
+                  txt = idx.read_text(encoding='utf-8')
+              except (OSError, UnicodeDecodeError):
+                  continue
+              out = txt.replace('<!-- 60aff04ec66bb4552c0fb866 -->', k1) if k1 else txt
+              out = out.replace('<!-- 92c14dc1324876277043e573af0c9004d328b7b5460d77 -->', k2) if k2 else out
+              if out != txt:
+                  idx.write_text(out, encoding='utf-8')
+                  done += 1
+          if done == 0 and (k1 or k2):
+              sys.exit(1)
+          "
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: publish
+        uses: actions/deploy-pages@v4
